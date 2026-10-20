@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 import os
 
@@ -66,6 +67,7 @@ async def send_text(to: str, body: str) -> bool:
         log.info("[dry-run] to %s: %s", to, body)
         return True
 
+    # TODO: use the clinic's own whatsapp_phone_number_id here instead of the single env value
     url = f"https://graph.facebook.com/{GRAPH_VERSION}/{PHONE_NUMBER_ID}/messages"
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(
@@ -105,6 +107,10 @@ async def handle_text(phone_number_id: str | None, sender: str, name: str | None
         log.info("conversation %s is %s; bot stays silent", conv_id, conv["status"])
         return
     # TODO: decide whether a new patient message should reopen a 'closed' conversation
+
+    if not await asyncio.to_thread(db.clinic_has_access, clinic_id):
+        log.info("clinic %s has no active subscription; bot stays silent", clinic_id)
+        return  # TODO: decide whether to send the patient a polite "please call the clinic" message instead
 
     if AGENT_ENABLED:
         try:
@@ -154,20 +160,30 @@ async def receive(request: Request, background: BackgroundTasks):
     if not valid_signature(body, request.headers.get("X-Hub-Signature-256")):
         raise HTTPException(status_code=403)
 
-    payload = await request.json()
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
             pnid = value.get("metadata", {}).get("phone_number_id")
             names = {c.get("wa_id"): c.get("profile", {}).get("name") for c in value.get("contacts", [])}
             for msg in value.get("messages", []):
-                if msg.get("type") == "text":
-                    background.add_task(
-                        handle_text, pnid, msg["from"], names.get(msg["from"]),
-                        msg["text"]["body"], msg["id"],
-                    )
-                else:
+                if msg.get("type") != "text":
                     # TODO: handle voice notes, images, and button replies
                     log.info("ignored message type %s", msg.get("type"))
+                    continue
+                text = ((msg.get("text") or {}).get("body") or "").replace("\x00", "")[:4096]  # Postgres rejects NUL; WhatsApp max is 4096
+                if not (text.strip() and msg.get("from") and msg.get("id")):
+                    log.warning("malformed or empty text message ignored")
+                    continue
+                background.add_task(
+                    handle_text, pnid, msg["from"], names.get(msg["from"]),
+                    text, msg["id"],
+                )
 
     return {"status": "ok"}  # answer fast; Meta retries slow webhooks

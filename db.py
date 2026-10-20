@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -165,3 +166,13 @@ def conversation_by_id(conversation_id: str) -> dict | None:
         .eq("id", conversation_id).limit(1).execute()
     )
     return r.data[0] if r.data else None
+
+
+def clinic_has_access(clinic_id: str) -> bool:
+    """False when the clinic's trial ended or its subscription lapsed. Fails open if the check itself errors."""
+    try:
+        r = sb().rpc("clinic_has_access", {"p_clinic": clinic_id}).execute()
+        return bool(r.data)
+    except Exception:
+        logging.getLogger("db").exception("subscription check failed; letting the clinic through")
+        return True

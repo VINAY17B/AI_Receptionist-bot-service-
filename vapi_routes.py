@@ -152,6 +152,10 @@ def _conversation(phone: str) -> str:
 
 
 def run_tools(msg: dict) -> list[dict]:
+    if not db.clinic_has_access(CLINIC_ID):
+        # TODO: Vapi still answers the call and bills minutes; later, detach the number from lapsed clinics
+        text = "This assistant is currently unavailable. Tell the caller to phone the clinic directly."
+        return [{"toolCallId": tc.get("id"), "result": text} for tc in msg.get("toolCallList", [])]
     phone = _caller(msg)
     ctx = None
     results = []
@@ -192,7 +196,11 @@ def save_transcript(msg: dict) -> None:
 async def vapi_webhook(request: Request, x_vapi_secret: str | None = Header(None)):
     if not x_vapi_secret or not hmac.compare_digest(x_vapi_secret, SECRET):
         raise HTTPException(status_code=403)
-    msg = (await request.json()).get("message", {})
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400)
+    msg = body.get("message", {}) if isinstance(body, dict) else {}
     kind = msg.get("type")
     if kind == "tool-calls":
         return {"results": await asyncio.to_thread(run_tools, msg)}
