@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 
 import httpx
 from dotenv import load_dotenv
@@ -13,14 +14,18 @@ from pydantic import BaseModel
 load_dotenv()
 
 import db  # noqa: E402  (after load_dotenv so .env is available)
+import reminders  # noqa: E402
+import sms  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("bot")
 
-VERIFY_TOKEN = os.environ["WHATSAPP_VERIFY_TOKEN"]
-APP_SECRET = os.environ["WHATSAPP_APP_SECRET"]
-WA_TOKEN = os.environ["WHATSAPP_TOKEN"]
-PHONE_NUMBER_ID = os.environ["WHATSAPP_PHONE_NUMBER_ID"]
+# WhatsApp is on hold: these four are optional now. Without them the WhatsApp webhook
+# rejects requests and send_text returns False.
+VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
+APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "")
+WA_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
+PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
 GRAPH_VERSION = os.environ.get("GRAPH_API_VERSION", "v21.0")  # TODO: set to the current version in the Meta dashboard
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 INTERNAL_KEY = os.environ["INTERNAL_API_KEY"]  # shared secret with the dashboard
@@ -30,7 +35,19 @@ AGENT_ENABLED = bool(os.environ.get("ANTHROPIC_API_KEY"))
 if AGENT_ENABLED:
     import agent  # noqa: E402
 
-app = FastAPI()
+# SMS confirmations and reminders run in the background when Twilio is configured (or in dry-run).
+REMINDERS_ENABLED = DRY_RUN or bool(os.environ.get("TWILIO_ACCOUNT_SID"))
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    task = asyncio.create_task(reminders.run()) if REMINDERS_ENABLED else None
+    yield
+    if task:
+        task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 # Voice calls via Vapi. Only active when the secret is set, like the agent above.
 if os.environ.get("VAPI_SERVER_SECRET"):
     from vapi_routes import router as vapi_router  # noqa: E402
@@ -49,13 +66,15 @@ def verify(
     token: str | None = Query(None, alias="hub.verify_token"),
     challenge: str | None = Query(None, alias="hub.challenge"),
 ):
-    if mode == "subscribe" and token and challenge and hmac.compare_digest(token, VERIFY_TOKEN):
+    if (VERIFY_TOKEN and mode == "subscribe" and token and challenge
+            and hmac.compare_digest(token, VERIFY_TOKEN)):
         return Response(content=challenge, media_type="text/plain")
     raise HTTPException(status_code=403)
 
 
 def valid_signature(body: bytes, header: str | None) -> bool:
-    if not header or not header.startswith("sha256="):
+    # An empty APP_SECRET would let anyone sign requests with an empty key, so refuse them all.
+    if not APP_SECRET or not header or not header.startswith("sha256="):
         return False
     expected = hmac.new(APP_SECRET.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, header.removeprefix("sha256="))
@@ -66,6 +85,9 @@ async def send_text(to: str, body: str) -> bool:
     if DRY_RUN:
         log.info("[dry-run] to %s: %s", to, body)
         return True
+    if not (WA_TOKEN and PHONE_NUMBER_ID):
+        log.warning("WhatsApp is not configured; message not sent")
+        return False
 
     # TODO: use the clinic's own whatsapp_phone_number_id here instead of the single env value
     url = f"https://graph.facebook.com/{GRAPH_VERSION}/{PHONE_NUMBER_ID}/messages"
@@ -144,11 +166,18 @@ async def send(payload: SendIn, x_internal_key: str | None = Header(None)):
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # TODO: WhatsApp only allows free-form replies within 24h of the patient's last
-    # message; outside that window an approved template is required.
-    ok = await send_text(conv["external_id"].lstrip("+"), body)
+    if conv["channel"] == "call":
+        # Call conversations have no WhatsApp thread: reply by SMS (patients cannot reply to it)
+        to = sms.to_e164(conv["external_id"])
+        ok = False
+        if to:
+            ok, _ = await sms.send_sms(to, body)
+    else:
+        # TODO: WhatsApp only allows free-form replies within 24h of the patient's last
+        # message; outside that window an approved template is required.
+        ok = await send_text(conv["external_id"].lstrip("+"), body)
     if not ok:
-        raise HTTPException(status_code=502, detail="WhatsApp send failed")
+        raise HTTPException(status_code=502, detail="Message send failed")
 
     await asyncio.to_thread(db.save_message, conv["clinic_id"], conv["id"], "out", body, None)
     return {"status": "sent"}

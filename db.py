@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from postgrest.exceptions import APIError
 from supabase import Client, create_client
@@ -162,7 +162,7 @@ def recent_messages(conversation_id: str, limit: int = 20) -> list[dict]:
 
 def conversation_by_id(conversation_id: str) -> dict | None:
     r = (
-        sb().table("conversations").select("id,clinic_id,external_id,status")
+        sb().table("conversations").select("id,clinic_id,external_id,status,channel")
         .eq("id", conversation_id).limit(1).execute()
     )
     return r.data[0] if r.data else None
@@ -176,3 +176,56 @@ def clinic_has_access(clinic_id: str) -> bool:
     except Exception:
         logging.getLogger("db").exception("subscription check failed; letting the clinic through")
         return True
+
+
+# ---- SMS confirmations and reminders (used by reminders.py) ----
+
+def upcoming_for_sms(horizon_days: int = 60) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    return (
+        sb().table("appointments")
+        .select("id,clinic_id,starts_at,patients(full_name,phone),doctors(name),clinics(name,phone,timezone)")
+        .in_("status", ["booked", "confirmed"])
+        .gt("starts_at", now.isoformat())
+        .lt("starts_at", (now + timedelta(days=horizon_days)).isoformat())
+        .order("starts_at").limit(500).execute().data
+    )  # TODO: page past 500 upcoming appointments
+
+
+def reminder_rows() -> list[dict]:
+    # TODO: Supabase returns at most 1000 rows; a duplicate claim is rejected by the unique key anyway
+    return (
+        sb().table("appointment_reminders")
+        .select("appointment_id,kind,for_starts_at,created_at")
+        .gt("for_starts_at", datetime.now(timezone.utc).isoformat()).execute().data
+    )
+
+
+def claim_reminder(clinic_id: str, appointment_id: str, kind: str, starts_iso: str,
+                   status: str = "pending") -> str | None:
+    """Returns the new row id, or None if this exact message was already claimed."""
+    try:
+        r = sb().table("appointment_reminders").insert({
+            "clinic_id": clinic_id, "appointment_id": appointment_id, "kind": kind,
+            "for_starts_at": starts_iso, "status": status,
+        }).execute()
+    except APIError as e:
+        if e.code == "23505":
+            return None
+        raise
+    return r.data[0]["id"]
+
+
+def finish_reminder(reminder_id: str, status: str, provider_id: str | None = None,
+                    error: str | None = None) -> None:
+    sb().table("appointment_reminders").update({
+        "status": status, "provider_message_id": provider_id, "error": error,
+        "sent_at": datetime.now(timezone.utc).isoformat() if status == "sent" else None,
+    }).eq("id", reminder_id).execute()
+
+
+def expire_stale_reminders() -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    sb().table("appointment_reminders").update(
+        {"status": "failed", "error": "stuck pending; not retried to avoid a double send"}
+    ).eq("status", "pending").lt("created_at", cutoff).execute()
