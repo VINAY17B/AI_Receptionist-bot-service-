@@ -9,12 +9,12 @@ import httpx
 
 log = logging.getLogger("sms")
 
-DRY_RUN = os.environ.get("DRY_RUN") == "1"
-SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-FROM = os.environ.get("TWILIO_FROM", "")  # your Twilio number in E.164
-MESSAGING_SERVICE = os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "")  # optional, instead of FROM
-TRIAL_TEMPLATE = os.environ.get("TWILIO_TRIAL_TEMPLATE", "")  # trial accounts only allow Twilio's predefined templates, e.g. sms_appointment_reminders
+DRY_RUN = os.environ.get("DEV_DRY_RUN") == "1"
+SID = os.environ.get("DEV_TWILIO_ACCOUNT_SID", "")
+TOKEN = os.environ.get("DEV_TWILIO_AUTH_TOKEN", "")
+FROM = os.environ.get("DEV_TWILIO_FROM", "")  # your Twilio number in E.164
+MESSAGING_SERVICE = os.environ.get("DEV_TWILIO_MESSAGING_SERVICE_SID", "")  # optional, instead of FROM
+TRIAL_TEMPLATE = os.environ.get("DEV_TWILIO_TRIAL_TEMPLATE", "")  # trial accounts only allow Twilio's predefined templates, e.g. sms_appointment_reminders
 
 def to_e164(phone: str) -> str | None:
     """Accepts +91..., 91..., 0..., or a bare 10-digit Indian mobile number."""

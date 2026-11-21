@@ -11,9 +11,9 @@ import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
-BOT = os.environ.get("BOT_URL", "http://127.0.0.1:8000")
-SECRET = os.environ["WHATSAPP_APP_SECRET"]
-PNID = os.environ["WHATSAPP_PHONE_NUMBER_ID"]
+BOT = os.environ.get("DEV_BOT_URL", "http://127.0.0.1:8000")
+SECRET = os.environ["DEV_WHATSAPP_APP_SECRET"]
+PNID = os.environ["DEV_WHATSAPP_PHONE_NUMBER_ID"]
 
 sender = sys.argv[1]
 text = " ".join(sys.argv[2:])

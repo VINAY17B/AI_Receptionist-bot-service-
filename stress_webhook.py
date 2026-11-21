@@ -7,7 +7,7 @@ any existing file. Run with DRY_RUN=1 and the bot running locally:
     python stress_webhook.py
 
 Reads WHATSAPP_APP_SECRET, WHATSAPP_PHONE_NUMBER_ID from .env (same as simulate.py).
-Optional env: BOT_URL (default http://127.0.0.1:8000), WEBHOOK_PATH (default /webhook).
+Optional env: DEV_BOT_URL (default http://127.0.0.1:8000), WEBHOOK_PATH (default /webhook).
 All dummy phones start with +9190000 so they are easy to clean up afterwards.
 """
 import hashlib
@@ -26,11 +26,11 @@ try:
 except ImportError:
     pass  # fall back to real environment variables
 
-BOT_URL = os.getenv("BOT_URL", "http://127.0.0.1:8000").rstrip("/")
+BOT_URL = os.getenv("DEV_BOT_URL", "http://127.0.0.1:8000").rstrip("/")
 # TODO: confirm the real webhook route in main.py (assumed /webhook)
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
-SECRET = os.getenv("WHATSAPP_APP_SECRET", "")
-PNID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+WEBHOOK_PATH = os.getenv("DEV_WEBHOOK_PATH", "/webhook")
+SECRET = os.getenv("DEV_WHATSAPP_APP_SECRET", "")
+PNID = os.getenv("DEV_WHATSAPP_PHONE_NUMBER_ID", "")
 
 results = []  # (group, name, expectation, status, ms, verdict)
 

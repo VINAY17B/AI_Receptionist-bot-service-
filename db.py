@@ -11,7 +11,7 @@ _sb: Client | None = None
 def sb() -> Client:
     global _sb
     if _sb is None:
-        _sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+        _sb = create_client(os.environ["DEV_SUPABASE_URL"], os.environ["DEV_SUPABASE_SERVICE_ROLE_KEY"])
     return _sb
 
 

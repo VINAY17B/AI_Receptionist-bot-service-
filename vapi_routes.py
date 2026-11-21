@@ -17,9 +17,9 @@ log = logging.getLogger("vapi")
 router = APIRouter()
 
 IST = ZoneInfo("Asia/Kolkata")
-SECRET = os.environ["VAPI_SERVER_SECRET"]
-CLINIC_ID = os.environ["VAPI_CLINIC_ID"]  # TODO: map Vapi phone number -> clinic once there is more than one clinic
-TEST_PHONE = os.environ.get("VAPI_TEST_PHONE")  # web calls have no caller number; e.g. +919876543210
+SECRET = os.environ["DEV_VAPI_SERVER_SECRET"]
+CLINIC_ID = os.environ["DEV_VAPI_CLINIC_ID"]  # TODO: map Vapi phone number -> clinic once there is more than one clinic
+TEST_PHONE = os.environ.get("DEV_VAPI_TEST_PHONE")  # web calls have no caller number; e.g. +919876543210
 
 
 def _say(dt: datetime) -> str:

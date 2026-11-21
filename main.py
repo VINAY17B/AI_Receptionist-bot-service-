@@ -22,21 +22,21 @@ log = logging.getLogger("bot")
 
 # WhatsApp is on hold: these four are optional now. Without them the WhatsApp webhook
 # rejects requests and send_text returns False.
-VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
-APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "")
-WA_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
-PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
-GRAPH_VERSION = os.environ.get("GRAPH_API_VERSION", "v21.0")  # TODO: set to the current version in the Meta dashboard
-DRY_RUN = os.environ.get("DRY_RUN") == "1"
-INTERNAL_KEY = os.environ["INTERNAL_API_KEY"]  # shared secret with the dashboard
+VERIFY_TOKEN = os.environ.get("DEV_WHATSAPP_VERIFY_TOKEN", "")
+APP_SECRET = os.environ.get("DEV_WHATSAPP_APP_SECRET", "")
+WA_TOKEN = os.environ.get("DEV_WHATSAPP_TOKEN", "")
+PHONE_NUMBER_ID = os.environ.get("DEV_WHATSAPP_PHONE_NUMBER_ID", "")
+GRAPH_VERSION = os.environ.get("DEV_GRAPH_API_VERSION", "v21.0")  # TODO: set to the current version in the Meta dashboard
+DRY_RUN = os.environ.get("DEV_DRY_RUN") == "1"
+INTERNAL_KEY = os.environ["DEV_INTERNAL_API_KEY"]  # shared secret with the dashboard
 
 # The booking agent needs an Anthropic API key. Until one is set, the bot just echoes.
-AGENT_ENABLED = bool(os.environ.get("ANTHROPIC_API_KEY"))
+AGENT_ENABLED = bool(os.environ.get("DEV_ANTHROPIC_API_KEY"))
 if AGENT_ENABLED:
     import agent  # noqa: E402
 
 # SMS confirmations and reminders run in the background when Twilio is configured (or in dry-run).
-REMINDERS_ENABLED = DRY_RUN or bool(os.environ.get("TWILIO_ACCOUNT_SID"))
+REMINDERS_ENABLED = DRY_RUN or bool(os.environ.get("DEV_TWILIO_ACCOUNT_SID"))
 
 
 @asynccontextmanager
@@ -49,7 +49,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 # Voice calls via Vapi. Only active when the secret is set, like the agent above.
-if os.environ.get("VAPI_SERVER_SECRET"):
+if os.environ.get("DEV_VAPI_SERVER_SECRET"):
     from vapi_routes import router as vapi_router  # noqa: E402
     app.include_router(vapi_router)
 
